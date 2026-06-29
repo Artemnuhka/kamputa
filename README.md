@@ -1,4 +1,5 @@
 # kamputa EN
+!!! "kamputa" created by AI !!!
 
 A custom, lightweight privilege escalation utility for Linux (an alternative to `sudo`/`doas`).  
 Created as an independent component for the VorsentOS distribution (an upcoming project).  
@@ -21,6 +22,7 @@ su -
 ./install_kamputa.run
 ```
 # kamputa RU
+!!! "kamputa" создана с помощью ИИ !!!
 
 Кастомная, легковесная утилита для повышения привилегий в Linux (альтернатива sudo/doas).
 Created as an independent component for the VorsentOS distribution (an upcoming project).
