@@ -25,7 +25,7 @@ su -
 !!! "kamputa" создана с помощью ИИ !!!
 
 Кастомная, легковесная утилита для повышения привилегий в Linux (альтернатива sudo/doas).
-Created as an independent component for the VorsentOS distribution (an upcoming project).
+Создана как независимый компонент для дистрибутива VorsentOS (будущий проект) 
 kamputa создана по мему от таких людей как mixap52 и cursedlinuxuser.
 
 ## Особенности
@@ -45,7 +45,7 @@ sudo ./install_kamputa.run
 su -
 ./install_kamputa.run
 ```  
-Сборка и установка из исходников || Building and installing from source
+## Сборка и установка из исходников || Building and installing from source
 ```bash
 make
 sudo make install
