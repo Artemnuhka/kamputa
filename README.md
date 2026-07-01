@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="kamputalogo.png" width="420" height="1040">
+</p>
+
+
 # kamputa EN
 !!! "kamputa" created by AI !!!
 
