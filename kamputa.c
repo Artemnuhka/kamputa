@@ -15,7 +15,7 @@
 #include <time.h>
 
 #define CONF_PATH "/etc/kamputa.conf"
-#define VERSION "1.4.0"
+#define VERSION "1.4.1"
 #define PASS_SIZE 256
 #define SETTINGS_FILE "/etc/kamputa/settings"
 #define AUTH_CACHE_DIR "/var/run/kamputa"
@@ -258,6 +258,7 @@ static void write_auth_cache(uid_t uid)
     if (fp) {
         fprintf(fp, "%ld", (long)time(NULL));
         fclose(fp);
+        if (chown(path, uid, -1) != 0) { /* best effort */ }
     }
 }
 
