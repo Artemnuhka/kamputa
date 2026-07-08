@@ -80,6 +80,8 @@ fi
 if [ "$action" = "2" ]; then
     rm -f /usr/local/bin/kamputa
     rm -f /etc/kamputa.conf
+    rm -rf /etc/kamputa
+    rm -rf /var/run/kamputa
     [ -L /usr/local/bin/sudo ] && rm -f /usr/local/bin/sudo
     [ -L /usr/local/bin/doas ] && rm -f /usr/local/bin/doas
     
@@ -104,6 +106,14 @@ if [ "$action" = "1" ]; then
     cp kamputa /usr/local/bin/
     chown root:root /usr/local/bin/kamputa
     chmod 4755 /usr/local/bin/kamputa
+
+    mkdir -p /etc/kamputa
+    if [ ! -f /etc/kamputa/settings ]; then
+        echo "timeout=5" > /etc/kamputa/settings
+        chmod 600 /etc/kamputa/settings
+    fi
+    mkdir -p /var/run/kamputa
+    chmod 700 /var/run/kamputa
     
     if [ ! -f /etc/kamputa.conf ]; then
         touch /etc/kamputa.conf
