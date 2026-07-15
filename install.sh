@@ -103,6 +103,111 @@ if [ "$action" = "1" ]; then
         exit 0
     fi
 
+    # --- Dependency check ---
+    MISSING_LIBS=""
+
+    if ! ldconfig -p 2>/dev/null | grep -q "libcrypt\.so\.1"; then
+        MISSING_LIBS="libcrypt.so.1"
+    fi
+
+    if [ -n "$MISSING_LIBS" ]; then
+        DISTRO_ID=""
+        DISTRO_LIKE=""
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            DISTRO_ID="$ID"
+            DISTRO_LIKE="$ID_LIKE"
+        fi
+
+        PKG_MANAGER=""
+        PKG_NAMES=""
+        DISTRO_NAME=""
+        INSTALL_CMD=""
+
+        case "$DISTRO_LIKE $DISTRO_ID" in
+            *debian*|*ubuntu*|*mint*|*kali*)
+                PKG_MANAGER="apt"
+                PKG_NAMES="libcrypt1"
+                DISTRO_NAME="Debian/Ubuntu"
+                INSTALL_CMD="apt install -y"
+                ;;
+            *fedora*|*rhel*|*centos*|fedora|rhel|centos)
+                PKG_MANAGER="dnf"
+                PKG_NAMES="libxcrypt"
+                DISTRO_NAME="Fedora/RHEL"
+                INSTALL_CMD="dnf install -y"
+                ;;
+            *arch*|arch)
+                PKG_MANAGER="pacman"
+                PKG_NAMES="libxcrypt"
+                DISTRO_NAME="Arch Linux"
+                INSTALL_CMD="pacman -S --noconfirm"
+                ;;
+            *suse*|opensuse*)
+                PKG_MANAGER="zypper"
+                PKG_NAMES="libxcrypt"
+                DISTRO_NAME="openSUSE"
+                INSTALL_CMD="zypper install -y"
+                ;;
+            *alpine*|alpine)
+                PKG_MANAGER="apk"
+                PKG_NAMES="libxcrypt"
+                DISTRO_NAME="Alpine"
+                INSTALL_CMD="apk add"
+                ;;
+            *void*|void)
+                PKG_MANAGER="xbps"
+                PKG_NAMES="libxcrypt"
+                DISTRO_NAME="Void Linux"
+                INSTALL_CMD="xbps-install -y"
+                ;;
+        esac
+
+        if [ -z "$PKG_MANAGER" ]; then
+            if [ "$lang" = "RU" ]; then
+                dialog --clear --title "Ошибка" --msgbox "Не удалось определить ваш дистрибутив.\nУстановите вручную пакет, содержащий:\n$MISSING_LIBS" 8 50
+            else
+                dialog --clear --title "Error" --msgbox "Could not detect your distribution.\nManually install the package containing:\n$MISSING_LIBS" 8 50
+            fi
+            clear
+            rm -f $tempfile
+            exit 1
+        fi
+
+        if [ "$lang" = "RU" ]; then
+            dialog --clear --title "Отсутствуют зависимости" \
+                   --yes-label "$L_YES" --no-label "$L_NO" \
+                   --yesno "Обнаружены отсутствующие библиотеки:\n$MISSING_LIBS\n\nВаш дистрибутив: $DISTRO_NAME\nПакетный менеджер: $PKG_MANAGER\nПакет для установки: $PKG_NAMES\n\nУстановить необходимые пакеты?" 12 60
+        else
+            dialog --clear --title "Missing Dependencies" \
+                   --yes-label "$L_YES" --no-label "$L_NO" \
+                   --yesno "Missing libraries detected:\n$MISSING_LIBS\n\nYour distribution: $DISTRO_NAME\nPackage manager: $PKG_MANAGER\nPackage to install: $PKG_NAMES\n\nInstall required packages?" 12 60
+        fi
+
+        if [ $? -eq 0 ]; then
+            $INSTALL_CMD $PKG_NAMES
+            if [ $? -ne 0 ]; then
+                if [ "$lang" = "RU" ]; then
+                    dialog --clear --title "Ошибка" --msgbox "Не удалось установить пакеты." 6 40
+                else
+                    dialog --clear --title "Error" --msgbox "Failed to install packages." 6 40
+                fi
+                clear
+                rm -f $tempfile
+                exit 1
+            fi
+        else
+            if [ "$lang" = "RU" ]; then
+                dialog --clear --title "Установка прервана" --msgbox "Установка kamputa прервана из-за отсутствия зависимостей." 6 50
+            else
+                dialog --clear --title "Installation Aborted" --msgbox "Kamputa installation aborted due to missing dependencies." 6 50
+            fi
+            clear
+            rm -f $tempfile
+            exit 1
+        fi
+    fi
+
     cp kamputa /usr/local/bin/
     chown root:root /usr/local/bin/kamputa
     chmod 4755 /usr/local/bin/kamputa

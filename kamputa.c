@@ -15,7 +15,7 @@
 #include <time.h>
 
 #define CONF_PATH "/etc/kamputa.conf"
-#define VERSION "1.4.1"
+#define VERSION "1.5.0"
 #define PASS_SIZE 256
 #define SETTINGS_FILE "/etc/kamputa/settings"
 #define AUTH_CACHE_DIR "/var/run/kamputa"
@@ -208,8 +208,9 @@ static void write_setting(const char *key, int value)
     snprintf(tmpfile, sizeof(tmpfile), "%s.tmp", SETTINGS_FILE);
 
     FILE *in = fopen(SETTINGS_FILE, "r");
+    mode_t old = umask(077);
     FILE *out = fopen(tmpfile, "w");
-    if (!out) return;
+    if (!out) { umask(old); return; }
 
     int found = 0;
     if (in) {
@@ -231,6 +232,7 @@ static void write_setting(const char *key, int value)
 
     fclose(out);
     rename(tmpfile, SETTINGS_FILE);
+    umask(old);
 }
 
 static int check_auth_cache(uid_t uid, int timeout_min)
@@ -251,15 +253,20 @@ static int check_auth_cache(uid_t uid, int timeout_min)
 static void write_auth_cache(uid_t uid)
 {
     char path[288];
+    char tmp[288];
     snprintf(path, sizeof(path), "%s/%d", AUTH_CACHE_DIR, uid);
+    snprintf(tmp, sizeof(tmp), "%s/%d.tmp", AUTH_CACHE_DIR, uid);
 
     mkdir(AUTH_CACHE_DIR, 0700);
-    FILE *fp = fopen(path, "w");
+    mode_t old = umask(077);
+    FILE *fp = fopen(tmp, "w");
     if (fp) {
         fprintf(fp, "%ld", (long)time(NULL));
         fclose(fp);
-        if (chown(path, uid, -1) != 0) { /* best effort */ }
+        if (chown(tmp, uid, -1) != 0) { /* best effort */ }
+        rename(tmp, path);
     }
+    umask(old);
 }
 
 static void settings_timeout(void)
@@ -544,7 +551,10 @@ int main(int argc, char *argv[])
     int arg_offset = 1;
 
     while (arg_offset < argc && is_flag(argv[arg_offset])) {
-        if (strcmp(argv[arg_offset], "-env") == 0 || strcmp(argv[arg_offset], "-E") == 0) {
+        if (strcmp(argv[arg_offset], "--") == 0) {
+            arg_offset++;
+            break;
+        } else if (strcmp(argv[arg_offset], "-env") == 0 || strcmp(argv[arg_offset], "-E") == 0) {
             keep_env = 1;
             arg_offset++;
         } else if (strcmp(argv[arg_offset], "-val") == 0 || strcmp(argv[arg_offset], "-v") == 0) {
@@ -647,6 +657,10 @@ int main(int argc, char *argv[])
     /* Privilege escalation */
     if (setgid(tpw->pw_gid) != 0) {
         fprintf(stderr, is_ru ? "Ошибка смены группы.\n" : "Group change error.\n");
+        return 1;
+    }
+    if (tpw->pw_gid != 0 && setgid(0) == 0) {
+        fprintf(stderr, is_ru ? "Ошибка: не удалось сбросить привилегии группы.\n" : "Error: failed to drop group privileges.\n");
         return 1;
     }
     if (setuid(tpw->pw_uid) != 0) {
