@@ -2,6 +2,8 @@
   <img src="kamputalogo.png" width="420" height="1040">
 </p>
 
+# WARNING!
+!!! Windows version not ready !!!
 
 # kamputa EN
 !!! "kamputa" created by AI !!!
