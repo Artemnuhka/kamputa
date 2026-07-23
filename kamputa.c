@@ -15,7 +15,7 @@
 #include <time.h>
 
 #define CONF_PATH "/etc/kamputa.conf"
-#define VERSION "1.5.0"
+#define VERSION "1.6.0"
 #define PASS_SIZE 256
 #define SETTINGS_FILE "/etc/kamputa/settings"
 #define AUTH_CACHE_DIR "/var/run/kamputa"
@@ -310,6 +310,58 @@ static void settings_timeout(void)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &told);
 }
 
+static void settings_attempts(void)
+{
+    int current = read_setting("attempts", 3);
+    char input[16];
+
+    if (is_ru) {
+        printf("Попытки пароля\n");
+        printf("Текущее: %d\n", current);
+        printf("Введите новое значение (0 = бесконечно): ");
+    } else {
+        printf("Password attempts\n");
+        printf("Current: %d\n", current);
+        printf("Enter new value (0 = unlimited): ");
+    }
+    fflush(stdout);
+
+    struct termios told, tnew;
+    int have_t = (tcgetattr(STDIN_FILENO, &told) == 0);
+    if (have_t) {
+        tnew = told;
+        tnew.c_lflag |= ICANON | ECHO;
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &tnew);
+    }
+
+    if (fgets(input, sizeof(input), stdin)) {
+        size_t l = strlen(input);
+        if (l > 0 && input[l - 1] == '\n') input[l - 1] = '\0';
+        int val = atoi(input);
+        if (val >= 0) {
+            write_setting("attempts", val);
+            if (is_ru)
+                printf("Попытки установлены: %d\n", val);
+            else
+                printf("Attempts set: %d\n", val);
+        }
+    }
+
+    if (have_t)
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &told);
+}
+
+static void settings_fail2ban(void)
+{
+    int current = read_setting("fail2ban", 1);
+    int new_val = current ? 0 : 1;
+    write_setting("fail2ban", new_val);
+    if (is_ru)
+        printf("Fail2ban: %s\n", new_val ? "Вкл" : "Выкл");
+    else
+        printf("Fail2ban: %s\n", new_val ? "On" : "Off");
+}
+
 static int settings_uninstall(void)
 {
     char input[64];
@@ -383,7 +435,7 @@ static int settings_uninstall(void)
 static void show_settings_menu(void)
 {
     int selected = 0;
-    int items = 2;
+    int items = 4;
     int running = 1;
 
     struct termios old, new;
@@ -405,15 +457,20 @@ static void show_settings_menu(void)
             printf("=== Kamputa Settings ===\n\n");
 
         int timeout = read_setting("timeout", 5);
-        if (is_ru)
-            printf("%s 1) Тайм-аут пароля [%d мин.]\n", selected == 0 ? ">" : " ", timeout);
-        else
-            printf("%s 1) Password timeout [%d min.]\n", selected == 0 ? ">" : " ", timeout);
+        int attempts = read_setting("attempts", 3);
+        int fail2ban = read_setting("fail2ban", 1);
 
-        if (is_ru)
-            printf("%s 2) Удалить kamputa\n", selected == 1 ? ">" : " ");
-        else
-            printf("%s 2) Uninstall kamputa\n", selected == 1 ? ">" : " ");
+        if (is_ru) {
+            printf("%s 1) Тайм-аут пароля [%d мин.]\n", selected == 0 ? ">" : " ", timeout);
+            printf("%s 2) Попытки пароля [%d]\n", selected == 1 ? ">" : " ", attempts);
+            printf("%s 3) Fail2ban [%s]\n", selected == 2 ? ">" : " ", fail2ban ? "Вкл" : "Выкл");
+            printf("%s 4) Удалить kamputa\n", selected == 3 ? ">" : " ");
+        } else {
+            printf("%s 1) Password timeout [%d min.]\n", selected == 0 ? ">" : " ", timeout);
+            printf("%s 2) Password attempts [%d]\n", selected == 1 ? ">" : " ", attempts);
+            printf("%s 3) Fail2ban [%s]\n", selected == 2 ? ">" : " ", fail2ban ? "On" : "Off");
+            printf("%s 4) Uninstall kamputa\n", selected == 3 ? ">" : " ");
+        }
 
         if (is_ru)
             printf("\n[↑↓ — навигация, Enter — выбор, q — выход]");
@@ -448,6 +505,18 @@ static void show_settings_menu(void)
                 char dummy;
                 while (read(STDIN_FILENO, &dummy, 1) <= 0);
             } else if (selected == 1) {
+                settings_attempts();
+                printf("\n%s", is_ru ? "Нажмите Enter..." : "Press Enter...");
+                fflush(stdout);
+                char dummy;
+                while (read(STDIN_FILENO, &dummy, 1) <= 0);
+            } else if (selected == 2) {
+                settings_fail2ban();
+                printf("\n%s", is_ru ? "Нажмите Enter..." : "Press Enter...");
+                fflush(stdout);
+                char dummy;
+                while (read(STDIN_FILENO, &dummy, 1) <= 0);
+            } else if (selected == 3) {
                 if (settings_uninstall()) {
                     running = 0;
                 } else {
@@ -611,6 +680,11 @@ int main(int argc, char *argv[])
     if (check_auth_cache(uid, auth_timeout)) {
         syslog(LOG_DEBUG, "User %s authenticated from cache (uid %d)", pw->pw_name, uid);
     } else {
+        int max_attempts = read_setting("attempts", 3);
+        int fail2ban = read_setting("fail2ban", 1);
+        int attempts_left = max_attempts;
+        int auth_ok = 0;
+
         char hostname[256] = "localhost";
         gethostname(hostname, sizeof(hostname));
         hostname[sizeof(hostname) - 1] = '\0';
@@ -618,29 +692,62 @@ int main(int argc, char *argv[])
         char prompt[512];
         snprintf(prompt, sizeof(prompt), is_ru ? "[kamputa: %s@%s] Паспорт: " : "[kamputa: %s@%s] Passport: ", pw->pw_name, hostname);
 
-        char pass[PASS_SIZE];
-        if (!my_getpass(prompt, pass, sizeof(pass))) {
-            fprintf(stderr, is_ru ? "Ошибка чтения пароля.\n" : "Error reading password.\n");
-            return 1;
-        }
+        while (attempts_left > 0) {
+            char pass[PASS_SIZE];
+            if (!my_getpass(prompt, pass, sizeof(pass))) {
+                fprintf(stderr, is_ru ? "Ошибка чтения пароля.\n" : "Error reading password.\n");
+                return 1;
+            }
 
-        char *encrypted = crypt(pass, sp->sp_pwdp);
-        if (!encrypted) {
+            char *encrypted = crypt(pass, sp->sp_pwdp);
             memset(pass, 0, sizeof(pass));
-            fprintf(stderr, is_ru ? "Ошибка шифрования пароля.\n" : "Password encryption error.\n");
-            return 1;
+
+            if (!encrypted) {
+                fprintf(stderr, is_ru ? "Ошибка шифрования.\n" : "Encryption error.\n");
+                return 1;
+            }
+
+            FILE *tty = fopen("/dev/tty", "w");
+
+            if (strcmp(encrypted, sp->sp_pwdp) == 0) {
+                auth_ok = 1;
+                if (tty) {
+                    fprintf(tty, "\r\033[K");
+                    fprintf(tty, "%s\033[1;32m%s\033[0m\n", prompt, is_ru ? "Успешно" : "Success");
+                    fclose(tty);
+                }
+                write_auth_cache(uid);
+                syslog(LOG_NOTICE, "User %s authenticated with password", pw->pw_name);
+                break;
+            } else {
+                attempts_left--;
+                if (tty) {
+                    fprintf(tty, "\r\033[K");
+                    fprintf(tty, "%s\033[1;31m%s\033[0m\n", prompt, is_ru ? "Неверный паспорт" : "Incorrect passport");
+                    fclose(tty);
+                }
+                syslog(LOG_WARNING, "Failed authentication for %s from uid %d (%d attempts left)", pw->pw_name, uid, attempts_left);
+
+                if (attempts_left > 0) {
+                    if (fail2ban) {
+                        int d = 1 << (max_attempts - attempts_left - 1);
+                        if (d > 30) d = 30;
+                        sleep(d);
+                    }
+                } else {
+                    FILE *tty2 = fopen("/dev/tty", "w");
+                    if (tty2) {
+                        fprintf(tty2, "%s\033[1;31m%s\033[0m\n", prompt, is_ru ? "Превышено число попыток" : "Max attempts exceeded");
+                        fclose(tty2);
+                    }
+                    fprintf(stderr, is_ru ? "Превышено число попыток.\n" : "Max attempts exceeded.\n");
+                    return 1;
+                }
+            }
         }
 
-        memset(pass, 0, sizeof(pass));
-
-        if (strcmp(encrypted, sp->sp_pwdp) != 0) {
-            fprintf(stderr, is_ru ? "Неверный паспорт.\n" : "Incorrect passport.\n");
-            syslog(LOG_WARNING, "Failed authentication for %s from uid %d", pw->pw_name, uid);
+        if (!auth_ok)
             return 1;
-        }
-
-        write_auth_cache(uid);
-        syslog(LOG_NOTICE, "User %s authenticated with password", pw->pw_name);
     }
 
     if (validate_only) {

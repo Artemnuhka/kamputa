@@ -214,7 +214,11 @@ if [ "$action" = "1" ]; then
 
     mkdir -p /etc/kamputa
     if [ ! -f /etc/kamputa/settings ]; then
-        echo "timeout=5" > /etc/kamputa/settings
+        {
+            echo "timeout=5"
+            echo "attempts=3"
+            echo "fail2ban=1"
+        } > /etc/kamputa/settings
         chmod 600 /etc/kamputa/settings
     fi
     mkdir -p /var/run/kamputa
